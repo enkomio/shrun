@@ -1,8 +1,8 @@
 # Shellcode Runner
 
-A vide-coded minimal Windows PE builder written in Rust. Takes a raw shellcode file (or a hex string) and produces a standalone `.exe` that places the shellcode in a single RWX `.text` section with a fixed entry point — ready to load in your preferred debugger.
+A minimal vibe-coded Windows PE builder written in Rust. Takes a raw shellcode file (or a hex string) and produces a standalone `.exe` that places the shellcode in a single RWX `.text` section with a fixed entry point — ready to load in your preferred debugger.
 
-Intended for shellcode analysis and debugging. No external dependencies, no runtime, no imports — just a bare PE with your bytes at `0x00401000`.
+Intended for shellcode analysis and debugging. No external dependencies, no runtime, no imports — just a bare PE with your bytes at `ImageBase + 0x1000`.
 
 ---
 
@@ -13,8 +13,8 @@ Intended for shellcode analysis and debugging. No external dependencies, no runt
 - Supports both **32-bit** (PE32 / x86) and **64-bit** (PE32+ / x86-64) output
 - ASLR disabled — `DllCharacteristics = 0x0000` (no `DYNAMIC_BASE`)
 - DEP disabled — no `NX_COMPAT`, `.text` section flagged as `RWX`
-- Entry point always at `ImageBase + 0x1000` = `0x00401000`
-- No imports, no relocations, no data directories — clean for static analysis
+- Entry point at `ImageBase + RVA 0x1000` — `0x0000000180001000` (64-bit) or `0x0000000000401000` (32-bit)
+- 16 data directory entries present and zeroed (spec-compliant) — no imports, no relocations
 
 ---
 
@@ -63,11 +63,11 @@ shrun.exe <input> [32|64]
 
 Output:
 ```
-[*] input:    shellcode.bin
+[*] input:    C:\Users\user\Desktop\shellcode.bin
 [*] mode:     PE64 (64-bit)
 [*] payload:  42 bytes
-[*] output:   shellcode_sh.exe
-[+] done — entry point: 0x00401000
+[*] output:   C:\Users\user\Desktop\shellcode_sh.exe
+[+] done — entry point: 0x0000000180001000
 ```
 
 ---
@@ -92,6 +92,6 @@ Output:
 [*] input:    <hex string>
 [*] mode:     PE64 (64-bit)
 [*] payload:  7 bytes
-[*] output:   shellcode_sh.exe
-[+] done — entry point: 0x00401000
+[*] output:   C:\Users\user\Desktop\shellcode_sh.exe
+[+] done — entry point: 0x0000000180001000
 ```
