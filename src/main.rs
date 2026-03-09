@@ -227,8 +227,10 @@ fn main() -> io::Result<()> {
 
     fs::write(&output_path, &pe)?;
     let output_display = fs::canonicalize(&output_path)?.display().to_string();
+    let image_base: u64 = if bits == 32 { 0x0040_0000 } else { 0x0000_0001_8000_0000 };
+    let entry_va = image_base + RVA_TEXT as u64;
     eprintln!("[*] output:   {}", output_display);
-    eprintln!("[+] done — entry point: 0x00401000");
+    eprintln!("[+] done — entry point: {:#018x}", entry_va);
 
     Ok(())
 }
