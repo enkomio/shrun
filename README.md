@@ -6,53 +6,6 @@ Intended for shellcode analysis and debugging. No external dependencies, no runt
 
 ---
 
-## Features
-
-- Builds a minimal PE32 or PE32+ executable from scratch (hardcoded header, no linker)
-- Accepts a raw binary file **or** a hex string as input
-- Supports both **32-bit** (PE32 / x86) and **64-bit** (PE32+ / x86-64) output
-- ASLR disabled — `DllCharacteristics = 0x0000` (no `DYNAMIC_BASE`)
-- DEP disabled — no `NX_COMPAT`, `.text` section flagged as `RWX` (`0xE0000020`)
-- Shellcode placed at `ImageBase + RVA 0x1000` (section start, always page-aligned)
-- A small **position-independent stub** is appended after the shellcode and set as the entry point; it passes `ImageBase + 0x1000` (the shellcode address) as the first argument before jumping to the shellcode
-- Single import: `VirtualAlloc` from `KERNEL32.DLL` (import table in `.rdata`)
-
----
-
-## PE layout
-
-```
-File offset 0x000   PE headers (padded to 0x200)
-File offset 0x200   .text  RVA 0x1000  — RWX
-                      [shellcode bytes]
-                      [stub 17–18 bytes]  ← AddressOfEntryPoint
-File offset 0x200+  .rdata              — import table (VirtualAlloc)
-```
-
-### Stub behaviour
-
-| Step | x64 | x86 |
-|------|-----|-----|
-| Recover shellcode address | `CALL $+5` / `POP RCX` / `SUB RCX, imm32` | `CALL $+5` / `POP EAX` / `SUB EAX, imm32` |
-| Pass as first argument | value in **RCX** | **PUSH EAX** |
-| Transfer control | `JMP rel32` → shellcode | `JMP rel32` → shellcode |
-
-The subtraction constant is computed at build time as `shellcode_len + 5`, so the result is always `ImageBase + RVA_TEXT` regardless of payload size.
-
----
-
-## Build
-
-```powershell
-# 64-bit host (default on Windows)
-cargo build --release --target x86_64-pc-windows-msvc
-
-# 32-bit target
-cargo build --release --target i686-pc-windows-msvc
-```
-
----
-
 ## Usage
 
 ```
@@ -114,3 +67,48 @@ Output:
 [*] shellcode: 0x0000000180001000  (= BASE_ADDRESS → rcx)
 [+] done  —  entry/stub: 0x0000000180001007
 ```
+
+---
+
+## Build
+
+```powershell
+# 64-bit host (default on Windows)
+cargo build --release --target x86_64-pc-windows-msvc
+
+# 32-bit target
+cargo build --release --target i686-pc-windows-msvc
+```
+
+---
+
+## Features
+
+- Builds a minimal PE32 or PE32+ executable from scratch (hardcoded header, no linker)
+- Accepts a raw binary file **or** a hex string as input
+- Supports both **32-bit** (PE32 / x86) and **64-bit** (PE32+ / x86-64) output
+- ASLR disabled — `DllCharacteristics = 0x0000` (no `DYNAMIC_BASE`)
+- DEP disabled — no `NX_COMPAT`, `.text` section flagged as `RWX` (`0xE0000020`)
+- Shellcode placed at `ImageBase + RVA 0x1000` (section start, always page-aligned)
+- A small **position-independent stub** is appended after the shellcode and set as the entry point; it passes `ImageBase + 0x1000` (the shellcode address) as the first argument before jumping to the shellcode
+- Single import: `VirtualAlloc` from `KERNEL32.DLL` (import table in `.rdata`)
+
+### PE layout
+
+```
+File offset 0x000   PE headers (padded to 0x200)
+File offset 0x200   .text  RVA 0x1000  — RWX
+                      [shellcode bytes]
+                      [stub 17–18 bytes]  ← AddressOfEntryPoint
+File offset 0x200+  .rdata              — import table (VirtualAlloc)
+```
+
+### Stub behaviour
+
+| Step | x64 | x86 |
+|------|-----|-----|
+| Recover shellcode address | `CALL $+5` / `POP RCX` / `SUB RCX, imm32` | `CALL $+5` / `POP EAX` / `SUB EAX, imm32` |
+| Pass as first argument | value in **RCX** | **PUSH EAX** |
+| Transfer control | `JMP rel32` → shellcode | `JMP rel32` → shellcode |
+
+The subtraction constant is computed at build time as `shellcode_len + 5`, so the result is always `ImageBase + RVA_TEXT` regardless of payload size.
