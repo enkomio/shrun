@@ -67,7 +67,7 @@ const PE64_HEADER: [u8; 408] = [
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x2e, 0x74, 0x65, 0x78, 0x74, 0x00, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x20, 0x00, 0x00, 0x60,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x20, 0x00, 0x00, 0xe0,
     0x2e, 0x72, 0x64, 0x61, 0x74, 0x61, 0x00, 0x00, 0x66, 0x00, 0x00, 0x00, 0x00, 0x20, 0x00, 0x00,
     0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x00, 0x40, 0x00, 0x00, 0x40,
@@ -96,7 +96,7 @@ const PE32_HEADER: [u8; 392] = [
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x2e, 0x74, 0x65, 0x78, 0x74, 0x00, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x20, 0x00, 0x00, 0x60,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x20, 0x00, 0x00, 0xe0,
     0x2e, 0x72, 0x64, 0x61, 0x74, 0x61, 0x00, 0x00, 0x46, 0x00, 0x00, 0x00, 0x00, 0x20, 0x00, 0x00,
     0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x00, 0x40, 0x00, 0x00, 0x40,
@@ -174,6 +174,48 @@ const RDATA32: [u8; 512] = [
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 ];
 
+// ── stubs ─────────────────────────────────────────────────────────────────────
+// Both stubs use CALL $+5 / POP to recover the runtime address of the
+// instruction right after the CALL.  That address equals:
+//   ImageBase + RVA_TEXT + 5   (= ImageBase + 0x1005)
+// Subtracting that constant yields ImageBase, which is then placed in the
+// first argument register (x64: RCX) or pushed onto the stack (x86).
+//
+// x64 stub — 13 bytes:
+//   E8 00000000  call $+5        ; push ImageBase+0x1005
+//   59           pop rcx
+//   48 81 E9     sub rcx, imm32  ; sub rcx, 0x1005  →  rcx = ImageBase
+//   05 10 00 00
+//
+// x86 stub — 12 bytes:
+//   E8 00000000  call $+5        ; push ImageBase+0x1005
+//   58           pop eax
+//   2D           sub eax, imm32  ; sub eax, 0x1005  →  eax = ImageBase
+//   05 10 00 00
+//   50           push eax        ; first argument on stack
+fn make_stub(bits: u32) -> Vec<u8> {
+    // value to subtract: offset of the popped return address from ImageBase
+    let sub_val: u32 = RVA_TEXT + 5; // = 0x1005
+    if bits == 64 {
+        let mut s = vec![
+            0xE8u8, 0x00, 0x00, 0x00, 0x00, // call $+5
+            0x59,                             // pop rcx
+            0x48, 0x81, 0xE9,                // sub rcx, imm32  (REX.W 81 /5 rcx)
+        ];
+        s.extend_from_slice(&sub_val.to_le_bytes());
+        s // 13 bytes
+    } else {
+        let mut s = vec![
+            0xE8u8, 0x00, 0x00, 0x00, 0x00, // call $+5
+            0x58,                             // pop eax
+            0x2D,                             // sub eax, imm32
+        ];
+        s.extend_from_slice(&sub_val.to_le_bytes());
+        s.push(0x50); // push eax
+        s // 12 bytes
+    }
+}
+
 // ── helpers ───────────────────────────────────────────────────────────────────
 fn align_up(v: u32, align: u32) -> u32 {
     (v + align - 1) & !(align - 1)
@@ -192,7 +234,7 @@ fn patch_u32(buf: &mut [u8], off: usize, val: u32) {
 // Patched fields:
 //   SizeOfCode, SizeOfImage, .text VirtualSize, .text SizeOfRawData,
 //   .rdata PointerToRawData
-fn build_pe(shellcode: &[u8], bits: u32) -> Vec<u8> {
+fn build_pe(shellcode: &[u8], bits: u32) -> (Vec<u8>, usize) {
     let (header, rdata, p_code, p_image, p_tvirt, p_traw, p_rptr) = if bits == 32 {
         (
             &PE32_HEADER[..], &RDATA32[..],
@@ -205,7 +247,12 @@ fn build_pe(shellcode: &[u8], bits: u32) -> Vec<u8> {
         )
     };
 
-    let text_raw  = align_up(shellcode.len() as u32, FILE_ALIGNMENT);
+    // prepend the base-address stub to the shellcode
+    let stub     = make_stub(bits);
+    let stub_len = stub.len();
+    let code_len = stub_len + shellcode.len();
+
+    let text_raw  = align_up(code_len as u32, FILE_ALIGNMENT);
     let rdata_rva = align_up(RVA_TEXT + text_raw, SECTION_ALIGNMENT);
     let rdata_ptr = FILE_ALIGNMENT + text_raw;        // file offset of .rdata
     let img_size  = align_up(rdata_rva + SECTION_ALIGNMENT, SECTION_ALIGNMENT);
@@ -218,9 +265,10 @@ fn build_pe(shellcode: &[u8], bits: u32) -> Vec<u8> {
     buf.extend_from_slice(header);
     buf.extend(std::iter::repeat(0u8).take(hdr_pad));
 
-    // .text
+    // .text = stub + shellcode
+    buf.extend_from_slice(&stub);
     buf.extend_from_slice(shellcode);
-    buf.extend(std::iter::repeat(0u8).take(text_raw as usize - shellcode.len()));
+    buf.extend(std::iter::repeat(0u8).take(text_raw as usize - code_len));
 
     // .rdata (fixed 0x200 bytes)
     buf.extend_from_slice(rdata);
@@ -228,7 +276,7 @@ fn build_pe(shellcode: &[u8], bits: u32) -> Vec<u8> {
     // patch header fields
     patch_u32(&mut buf, p_code,  text_raw);
     patch_u32(&mut buf, p_image, img_size);
-    patch_u32(&mut buf, p_tvirt, shellcode.len() as u32);
+    patch_u32(&mut buf, p_tvirt, code_len as u32);
     patch_u32(&mut buf, p_traw,  text_raw);
     patch_u32(&mut buf, p_rptr,  rdata_ptr);
 
@@ -268,7 +316,7 @@ fn build_pe(shellcode: &[u8], bits: u32) -> Vec<u8> {
         }
     }
 
-    buf
+    (buf, stub_len)
 }
 
 // ── hex decode ────────────────────────────────────────────────────────────────
@@ -332,15 +380,19 @@ fn main() -> io::Result<()> {
     eprintln!("[*] mode:    PE{} ({}-bit)", bits, bits);
     eprintln!("[*] payload: {} bytes", shellcode.len());
 
-    let pe = build_pe(&shellcode, bits);
+    let (pe, stub_len) = build_pe(&shellcode, bits);
     fs::write(&output_path, &pe)?;
 
     let out_display  = fs::canonicalize(&output_path)?.display().to_string();
     let image_base: u64 = if bits == 32 { 0x0040_0000 } else { 0x0000_0001_8000_0000 };
-    let entry_va = image_base + RVA_TEXT as u64;
+    let entry_va     = image_base + RVA_TEXT as u64;
+    let shellcode_va = entry_va + stub_len as u64;
+    let arg_desc     = if bits == 64 { "rcx" } else { "[esp]" };
 
     eprintln!("[*] output:  {}", out_display);
-    eprintln!("[+] done  —  entry point: {:#018x}", entry_va);
+    eprintln!("[*] stub:    {} bytes  (base addr → {})", stub_len, arg_desc);
+    eprintln!("[*] entry:   {:#018x}  (stub)", entry_va);
+    eprintln!("[+] done  —  shellcode: {:#018x}", shellcode_va);
 
     Ok(())
 }
