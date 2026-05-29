@@ -91,7 +91,7 @@ cargo build --release --target i686-pc-windows-msvc
 - DEP disabled — no `NX_COMPAT`, `.text` section flagged as `RWX` (`0xE0000020`)
 - Shellcode placed at `ImageBase + RVA 0x1000` (section start, always page-aligned)
 - A small **position-independent stub** is appended after the shellcode and set as the entry point; it passes `ImageBase + 0x1000` (the shellcode address) as the first argument before jumping to the shellcode
-- Single import: `VirtualAlloc` from `KERNEL32.DLL` (import table in `.rdata`)
+- Three imports from `KERNEL32.DLL` (import table in `.rdata`): `VirtualAlloc`, `LoadLibraryA`, `GetProcAddress`
 
 ### PE layout
 
@@ -100,7 +100,7 @@ File offset 0x000   PE headers (padded to 0x200)
 File offset 0x200   .text  RVA 0x1000  — RWX
                       [shellcode bytes]
                       [stub 17–18 bytes]  ← AddressOfEntryPoint
-File offset 0x200+  .rdata              — import table (VirtualAlloc)
+File offset 0x200+  .rdata              — import table (VirtualAlloc, LoadLibraryA, GetProcAddress)
 ```
 
 ### Stub behaviour
